@@ -381,6 +381,113 @@ const LOADING_MESSAGES = [
   "Building your sonic profile...",
 ];
 
+const RECOMMENDATION_POOL = {
+  songs: [
+    { title: "On Hold", artist: "The xx", tags: ["indie", "moody", "electronic", "night"] },
+    { title: "Fantasy", artist: "The Blaze", tags: ["electronic", "dance", "cinematic", "night"] },
+    { title: "RNP", artist: "YBN Cordae ft. Anderson .Paak", tags: ["hip-hop", "groove", "upbeat"] },
+    { title: "Redbone", artist: "Childish Gambino", tags: ["rnb", "soul", "night"] },
+    { title: "Seigfried", artist: "Frank Ocean", tags: ["rnb", "lyrics", "moody"] },
+    { title: "Kyoto", artist: "Phoebe Bridgers", tags: ["indie", "lyrics", "upbeat"] },
+    { title: "Hyperballad", artist: "Björk", tags: ["electronic", "experimental", "emotional"] },
+    { title: "Nights", artist: "Frank Ocean", tags: ["rnb", "mood", "night"] },
+    { title: "Instant Crush", artist: "Daft Punk ft. Julian Casablancas", tags: ["electronic", "indie", "retro"] },
+    { title: "Feels Like We Only Go Backwards", artist: "Tame Impala", tags: ["indie", "psychedelic", "retro"] },
+    { title: "Bad Habit", artist: "Steve Lacy", tags: ["indie", "rnb", "upbeat"] },
+    { title: "Take Me Out", artist: "Franz Ferdinand", tags: ["rock", "upbeat", "guitar"] },
+  ],
+  artists: [
+    { name: "Little Simz", genre: "Hip-Hop", tags: ["hip-hop", "lyrics", "creative"] },
+    { name: "Khruangbin", genre: "Psychedelic Soul", tags: ["instrumental", "groove", "chill"] },
+    { name: "Fred again..", genre: "Electronic", tags: ["electronic", "dance", "emotional"] },
+    { name: "FKA twigs", genre: "Alt R&B", tags: ["rnb", "experimental", "moody"] },
+    { name: "Turnstile", genre: "Alternative Rock", tags: ["rock", "energy", "live"] },
+    { name: "Kaytranada", genre: "Electronic / R&B", tags: ["electronic", "rnb", "groove"] },
+    { name: "Japanese Breakfast", genre: "Indie Pop", tags: ["indie", "lyrics", "dreamy"] },
+    { name: "BadBadNotGood", genre: "Jazz Fusion", tags: ["jazz", "instrumental", "deepcut"] },
+  ],
+  deepCuts: [
+    { title: "Crush", artist: "Yuna", tags: ["rnb", "soft", "night"] },
+    { title: "You and I", artist: "Washed Out", tags: ["chill", "electronic", "retro"] },
+    { title: "Window", artist: "Still Woozy", tags: ["indie", "groove", "upbeat"] },
+    { title: "Shuggie", artist: "Foxygen", tags: ["retro", "indie", "psychedelic"] },
+    { title: "Mortal Projections", artist: "Djo", tags: ["indie", "experimental", "night"] },
+    { title: "Mango", artist: "Kamaal Williams", tags: ["jazz", "instrumental", "groove"] },
+  ],
+};
+
+function inferTasteTags(userAnswers) {
+  const text = userAnswers.map((entry) => entry.answer.toLowerCase()).join(" ");
+  const tags = new Set(["indie", "night"]);
+
+  if (/(house|electronic|dance|synth|festival|808)/.test(text)) {
+    tags.add("electronic");
+    tags.add("dance");
+  }
+  if (/(hip-hop|rap|bars|bass|kendrick)/.test(text)) tags.add("hip-hop");
+  if (/(r&b|soul|smooth|falsetto|neo-soul)/.test(text)) tags.add("rnb");
+  if (/(rock|guitar|grunge|punk|mosh)/.test(text)) tags.add("rock");
+  if (/(lyrics|emotional|sad|feelings|nostalgic)/.test(text)) tags.add("lyrics");
+  if (/(lo-fi|ambient|study|instrumentals|jazz|bossa)/.test(text)) tags.add("instrumental");
+  if (/(upbeat|energy|work out|party|going out)/.test(text)) tags.add("upbeat");
+  if (/(vinyl|70s|80s|90s|motown|classic)/.test(text)) tags.add("retro");
+  if (/(cinematic|atmospheric|2 am|alone)/.test(text)) tags.add("moody");
+
+  return [...tags];
+}
+
+function pickByTags(items, tags, count) {
+  const weighted = items
+    .map((item) => ({ item, score: item.tags.filter((tag) => tags.includes(tag)).length }))
+    .sort((a, b) => b.score - a.score);
+
+  const selected = weighted.slice(0, count).map(({ item }) => item);
+  if (selected.length < count) {
+    const used = new Set(selected.map((item) => JSON.stringify(item)));
+    for (const item of items) {
+      const key = JSON.stringify(item);
+      if (!used.has(key)) {
+        selected.push(item);
+      }
+      if (selected.length === count) break;
+    }
+  }
+
+  return selected;
+}
+
+function generateRecommendations(userAnswers) {
+  const tags = inferTasteTags(userAnswers);
+  const topSongs = pickByTags(RECOMMENDATION_POOL.songs, tags, 5).map((song) => ({
+    title: song.title,
+    artist: song.artist,
+    why: `This matches your ${tags.slice(0, 2).join(" + ")} taste profile while keeping things fresh.`,
+  }));
+  const topArtists = pickByTags(RECOMMENDATION_POOL.artists, tags, 4).map((artist) => ({
+    name: artist.name,
+    genre: artist.genre,
+    why: `${artist.name} blends the textures and moods you gravitate toward in the quiz.`,
+  }));
+  const deepCuts = pickByTags(RECOMMENDATION_POOL.deepCuts, tags, 3).map((song) => ({
+    title: song.title,
+    artist: song.artist,
+    why: "A less obvious pick that still lines up with your sonic preferences.",
+  }));
+
+  return {
+    profile_name: `${tags[0]} ${tags[1]} explorer`
+      .split(" ")
+      .map((part) => part[0].toUpperCase() + part.slice(1))
+      .join(" "),
+    profile_description:
+      "Your picks suggest a listener who balances strong mood with musical curiosity. You like tracks with identity, replay value, and a little edge.",
+    top_songs: topSongs,
+    top_artists: topArtists,
+    deep_cuts: deepCuts,
+    playlist_name: `${tags[0]} after dark`,
+  };
+}
+
 // ─── Equalizer Bars ─────────────────────────────────────────────────────────────
 function EqualizerBars() {
   const bars = Array.from({ length: 16 }, (_, i) => ({
@@ -919,57 +1026,9 @@ export default function App() {
     }));
 
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [
-            {
-              role: "user",
-              content: `Based on these music taste quiz answers, give me personalized music recommendations. Return ONLY valid JSON with no markdown or extra text.
-
-Quiz answers: ${JSON.stringify(userAnswers, null, 2)}
-
-Return this exact JSON structure:
-{
-  "profile_name": "A fun 2-3 word music personality label",
-  "profile_description": "A 2-sentence description of their music taste personality",
-  "top_songs": [
-    {"title": "Song Name", "artist": "Artist Name", "why": "One sentence on why this fits them"}
-  ],
-  "top_artists": [
-    {"name": "Artist Name", "genre": "Genre", "why": "One sentence on why they'd vibe with this artist"}
-  ],
-  "deep_cuts": [
-    {"title": "Song Name", "artist": "Artist Name", "why": "One sentence explaining this hidden gem pick"}
-  ],
-  "playlist_name": "A creative playlist name based on their taste"
-}
-
-Give exactly 5 top_songs, 4 top_artists, and 3 deep_cuts. Make recommendations specific and varied — avoid obvious mainstream picks unless they genuinely fit. Mix well-known and lesser-known artists.`,
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      const text = data.content?.[0]?.text || "";
-
-      let parsed;
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error("Could not parse AI response");
-      }
-
-      setResults(parsed);
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const generated = generateRecommendations(userAnswers);
+      setResults(generated);
       setScreen("results");
     } catch (err) {
       console.error("Recommendation error:", err);
