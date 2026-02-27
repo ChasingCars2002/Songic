@@ -456,23 +456,63 @@ function pickByTags(items, tags, count) {
   return selected;
 }
 
+const TAG_REASON_LABELS = {
+  indie: "alt-pop",
+  night: "late-night vibes",
+  electronic: "modern production",
+  dance: "dancefloor energy",
+  "hip-hop": "hip-hop rhythm",
+  rnb: "silky R&B",
+  rock: "guitar edge",
+  lyrics: "lyric-driven storytelling",
+  instrumental: "instrumental focus",
+  upbeat: "high-energy",
+  retro: "retro color",
+  moody: "moody atmosphere",
+};
+
+function buildMatchedReason(itemTags, inferredTags) {
+  const matchedTags = inferredTags.filter((tag) => itemTags.includes(tag));
+  const fallbackTags = inferredTags.slice(0, 3);
+  const reasonTags = (matchedTags.length ? matchedTags : fallbackTags)
+    .slice(0, 3)
+    .map((tag) => TAG_REASON_LABELS[tag] ?? tag);
+
+  return {
+    matchedTags,
+    reason: `Because you picked ${reasonTags.join(" + ")}.`,
+  };
+}
+
 function generateRecommendations(userAnswers) {
   const tags = inferTasteTags(userAnswers);
-  const topSongs = pickByTags(RECOMMENDATION_POOL.songs, tags, 5).map((song) => ({
-    title: song.title,
-    artist: song.artist,
-    why: `This matches your ${tags.slice(0, 2).join(" + ")} taste profile while keeping things fresh.`,
-  }));
-  const topArtists = pickByTags(RECOMMENDATION_POOL.artists, tags, 4).map((artist) => ({
-    name: artist.name,
-    genre: artist.genre,
-    why: `${artist.name} blends the textures and moods you gravitate toward in the quiz.`,
-  }));
-  const deepCuts = pickByTags(RECOMMENDATION_POOL.deepCuts, tags, 3).map((song) => ({
-    title: song.title,
-    artist: song.artist,
-    why: "A less obvious pick that still lines up with your sonic preferences.",
-  }));
+  const topSongs = pickByTags(RECOMMENDATION_POOL.songs, tags, 5).map((song) => {
+    const { matchedTags, reason } = buildMatchedReason(song.tags, tags);
+    return {
+      title: song.title,
+      artist: song.artist,
+      matched_tags: matchedTags,
+      reason,
+    };
+  });
+  const topArtists = pickByTags(RECOMMENDATION_POOL.artists, tags, 4).map((artist) => {
+    const { matchedTags, reason } = buildMatchedReason(artist.tags, tags);
+    return {
+      name: artist.name,
+      genre: artist.genre,
+      matched_tags: matchedTags,
+      reason,
+    };
+  });
+  const deepCuts = pickByTags(RECOMMENDATION_POOL.deepCuts, tags, 3).map((song) => {
+    const { matchedTags, reason } = buildMatchedReason(song.tags, tags);
+    return {
+      title: song.title,
+      artist: song.artist,
+      matched_tags: matchedTags,
+      reason,
+    };
+  });
 
   return {
     profile_name: `${tags[0]} ${tags[1]} explorer`
@@ -877,7 +917,7 @@ function ResultsScreen({ results, onRetake }) {
                   <div className="min-w-0">
                     <p className="font-semibold text-white">{song.title}</p>
                     <p className="text-sm text-gray-400">{song.artist}</p>
-                    <p className="text-xs text-gray-500 mt-1">{song.why}</p>
+                    <p className="text-xs text-gray-500 mt-1">{song.reason}</p>
                   </div>
                 </div>
               </div>
@@ -910,7 +950,7 @@ function ResultsScreen({ results, onRetake }) {
                     {artist.genre}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500">{artist.why}</p>
+                <p className="text-xs text-gray-500">{artist.reason}</p>
               </div>
             ))}
           </div>
@@ -934,7 +974,7 @@ function ResultsScreen({ results, onRetake }) {
                 <p className="font-semibold text-white">
                   {cut.title} <span className="text-gray-400 font-normal">— {cut.artist}</span>
                 </p>
-                <p className="text-xs text-gray-500 mt-1">{cut.why}</p>
+                <p className="text-xs text-gray-500 mt-1">{cut.reason}</p>
               </div>
             ))}
           </div>
