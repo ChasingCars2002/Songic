@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, claude/music-taste-quiz-7K4YM]
+    branches: [main, claude/music-taste-quiz-7K4YM, claude/music-discovery-app-DORAU]
 
 permissions:
   contents: read

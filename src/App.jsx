@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { getRecommendations, fetchReplacement } from "./api/music";
+import { useBlacklist } from "./hooks/useBlacklist";
+import RecommendationCard from "./components/RecommendationCard";
 
 // ─── Question Bank (30 questions) ──────────────────────────────────────────────
 const QUESTION_BANK = [
@@ -359,7 +362,7 @@ const QUESTION_BANK = [
   },
 ];
 
-const QUIZ_COUNT = 12;
+const QUIZ_COUNT = 5;
 
 function shuffleArray(arr) {
   const shuffled = [...arr];
@@ -381,116 +384,9 @@ const LOADING_MESSAGES = [
   "Building your sonic profile...",
 ];
 
-const RECOMMENDATION_POOL = {
-  songs: [
-    { title: "On Hold", artist: "The xx", tags: ["indie", "moody", "electronic", "night"] },
-    { title: "Fantasy", artist: "The Blaze", tags: ["electronic", "dance", "cinematic", "night"] },
-    { title: "RNP", artist: "YBN Cordae ft. Anderson .Paak", tags: ["hip-hop", "groove", "upbeat"] },
-    { title: "Redbone", artist: "Childish Gambino", tags: ["rnb", "soul", "night"] },
-    { title: "Seigfried", artist: "Frank Ocean", tags: ["rnb", "lyrics", "moody"] },
-    { title: "Kyoto", artist: "Phoebe Bridgers", tags: ["indie", "lyrics", "upbeat"] },
-    { title: "Hyperballad", artist: "Björk", tags: ["electronic", "experimental", "emotional"] },
-    { title: "Nights", artist: "Frank Ocean", tags: ["rnb", "mood", "night"] },
-    { title: "Instant Crush", artist: "Daft Punk ft. Julian Casablancas", tags: ["electronic", "indie", "retro"] },
-    { title: "Feels Like We Only Go Backwards", artist: "Tame Impala", tags: ["indie", "psychedelic", "retro"] },
-    { title: "Bad Habit", artist: "Steve Lacy", tags: ["indie", "rnb", "upbeat"] },
-    { title: "Take Me Out", artist: "Franz Ferdinand", tags: ["rock", "upbeat", "guitar"] },
-  ],
-  artists: [
-    { name: "Little Simz", genre: "Hip-Hop", tags: ["hip-hop", "lyrics", "creative"] },
-    { name: "Khruangbin", genre: "Psychedelic Soul", tags: ["instrumental", "groove", "chill"] },
-    { name: "Fred again..", genre: "Electronic", tags: ["electronic", "dance", "emotional"] },
-    { name: "FKA twigs", genre: "Alt R&B", tags: ["rnb", "experimental", "moody"] },
-    { name: "Turnstile", genre: "Alternative Rock", tags: ["rock", "energy", "live"] },
-    { name: "Kaytranada", genre: "Electronic / R&B", tags: ["electronic", "rnb", "groove"] },
-    { name: "Japanese Breakfast", genre: "Indie Pop", tags: ["indie", "lyrics", "dreamy"] },
-    { name: "BadBadNotGood", genre: "Jazz Fusion", tags: ["jazz", "instrumental", "deepcut"] },
-  ],
-  deepCuts: [
-    { title: "Crush", artist: "Yuna", tags: ["rnb", "soft", "night"] },
-    { title: "You and I", artist: "Washed Out", tags: ["chill", "electronic", "retro"] },
-    { title: "Window", artist: "Still Woozy", tags: ["indie", "groove", "upbeat"] },
-    { title: "Shuggie", artist: "Foxygen", tags: ["retro", "indie", "psychedelic"] },
-    { title: "Mortal Projections", artist: "Djo", tags: ["indie", "experimental", "night"] },
-    { title: "Mango", artist: "Kamaal Williams", tags: ["jazz", "instrumental", "groove"] },
-  ],
-};
-
-function inferTasteTags(userAnswers) {
-  const text = userAnswers.map((entry) => entry.answer.toLowerCase()).join(" ");
-  const tags = new Set(["indie", "night"]);
-
-  if (/(house|electronic|dance|synth|festival|808)/.test(text)) {
-    tags.add("electronic");
-    tags.add("dance");
-  }
-  if (/(hip-hop|rap|bars|bass|kendrick)/.test(text)) tags.add("hip-hop");
-  if (/(r&b|soul|smooth|falsetto|neo-soul)/.test(text)) tags.add("rnb");
-  if (/(rock|guitar|grunge|punk|mosh)/.test(text)) tags.add("rock");
-  if (/(lyrics|emotional|sad|feelings|nostalgic)/.test(text)) tags.add("lyrics");
-  if (/(lo-fi|ambient|study|instrumentals|jazz|bossa)/.test(text)) tags.add("instrumental");
-  if (/(upbeat|energy|work out|party|going out)/.test(text)) tags.add("upbeat");
-  if (/(vinyl|70s|80s|90s|motown|classic)/.test(text)) tags.add("retro");
-  if (/(cinematic|atmospheric|2 am|alone)/.test(text)) tags.add("moody");
-
-  return [...tags];
-}
-
-function pickByTags(items, tags, count) {
-  const weighted = items
-    .map((item) => ({ item, score: item.tags.filter((tag) => tags.includes(tag)).length }))
-    .sort((a, b) => b.score - a.score);
-
-  const selected = weighted.slice(0, count).map(({ item }) => item);
-  if (selected.length < count) {
-    const used = new Set(selected.map((item) => JSON.stringify(item)));
-    for (const item of items) {
-      const key = JSON.stringify(item);
-      if (!used.has(key)) {
-        selected.push(item);
-      }
-      if (selected.length === count) break;
-    }
-  }
-
-  return selected;
-}
-
-function generateRecommendations(userAnswers) {
-  const tags = inferTasteTags(userAnswers);
-  const topSongs = pickByTags(RECOMMENDATION_POOL.songs, tags, 5).map((song) => ({
-    title: song.title,
-    artist: song.artist,
-    why: `This matches your ${tags.slice(0, 2).join(" + ")} taste profile while keeping things fresh.`,
-  }));
-  const topArtists = pickByTags(RECOMMENDATION_POOL.artists, tags, 4).map((artist) => ({
-    name: artist.name,
-    genre: artist.genre,
-    why: `${artist.name} blends the textures and moods you gravitate toward in the quiz.`,
-  }));
-  const deepCuts = pickByTags(RECOMMENDATION_POOL.deepCuts, tags, 3).map((song) => ({
-    title: song.title,
-    artist: song.artist,
-    why: "A less obvious pick that still lines up with your sonic preferences.",
-  }));
-
-  return {
-    profile_name: `${tags[0]} ${tags[1]} explorer`
-      .split(" ")
-      .map((part) => part[0].toUpperCase() + part.slice(1))
-      .join(" "),
-    profile_description:
-      "Your picks suggest a listener who balances strong mood with musical curiosity. You like tracks with identity, replay value, and a little edge.",
-    top_songs: topSongs,
-    top_artists: topArtists,
-    deep_cuts: deepCuts,
-    playlist_name: `${tags[0]} after dark`,
-  };
-}
-
 // ─── Equalizer Bars ─────────────────────────────────────────────────────────────
 function EqualizerBars() {
-  const bars = Array.from({ length: 16 }, (_, i) => ({
+  const bars = Array.from({ length: 16 }, () => ({
     delay: Math.random() * 0.8,
     speed: 0.3 + Math.random() * 0.5,
   }));
@@ -501,7 +397,7 @@ function EqualizerBars() {
           key={i}
           className="w-[5px] rounded-full origin-bottom"
           style={{
-            background: `linear-gradient(to top, #ff2d78, #a855f7)`,
+            background: "linear-gradient(to top, #ff2d78, #a855f7)",
             animation: `eq-bar ${bar.speed}s ease-in-out ${bar.delay}s infinite alternate`,
           }}
         />
@@ -547,7 +443,9 @@ function ProgressBar({ current, total }) {
   return (
     <div className="w-full max-w-md mx-auto mb-8">
       <div className="flex justify-between text-sm text-gray-400 mb-2">
-        <span>{current + 1} of {total}</span>
+        <span>
+          {current + 1} of {total}
+        </span>
         <span>{Math.round(pct)}%</span>
       </div>
       <div className="h-1.5 bg-[#252532] rounded-full overflow-hidden">
@@ -567,16 +465,33 @@ function ProgressBar({ current, total }) {
 function LandingScreen({ onStart }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 relative overflow-hidden">
-      <div className="absolute top-1/4 -left-32 w-96 h-96 rounded-full blur-[120px] pointer-events-none" style={{ background: "rgba(255,45,120,0.08)" }} />
-      <div className="absolute bottom-1/4 -right-32 w-96 h-96 rounded-full blur-[120px] pointer-events-none" style={{ background: "rgba(168,85,247,0.08)" }} />
+      <div
+        className="absolute top-1/4 -left-32 w-96 h-96 rounded-full blur-[120px] pointer-events-none"
+        style={{ background: "rgba(255,45,120,0.08)" }}
+      />
+      <div
+        className="absolute bottom-1/4 -right-32 w-96 h-96 rounded-full blur-[120px] pointer-events-none"
+        style={{ background: "rgba(168,85,247,0.08)" }}
+      />
 
-      <div className="text-center relative z-10" style={{ animation: "fadeInUp 0.6s ease-out" }}>
+      <div
+        className="text-center relative z-10"
+        style={{ animation: "fadeInUp 0.6s ease-out" }}
+      >
         <div className="mb-6 flex items-center justify-center">
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg, #ff2d78, #a855f7)" }}
+            style={{
+              background: "linear-gradient(135deg, #ff2d78, #a855f7)",
+            }}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-9 h-9">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              className="w-9 h-9"
+            >
               <path d="M9 18V5l12-2v13" />
               <circle cx="6" cy="18" r="3" />
               <circle cx="18" cy="16" r="3" />
@@ -588,7 +503,8 @@ function LandingScreen({ onStart }) {
           className="text-6xl sm:text-8xl font-black tracking-tight mb-4"
           style={{
             fontFamily: "'Outfit', sans-serif",
-            background: "linear-gradient(135deg, #ff2d78, #a855f7, #3b82f6)",
+            background:
+              "linear-gradient(135deg, #ff2d78, #a855f7, #3b82f6)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
           }}
@@ -596,15 +512,21 @@ function LandingScreen({ onStart }) {
           Songic
         </h1>
 
-        <p className="text-xl text-gray-400 mb-2">Discover your sonic identity</p>
+        <p className="text-xl text-gray-400 mb-2">
+          Discover your sonic identity
+        </p>
         <p className="text-sm text-gray-500 mb-10 max-w-sm mx-auto">
-          Answer 12 quick questions about your music taste and get AI-powered recommendations tailored just for you.
+          Answer {QUIZ_COUNT} quick questions about your music taste and get
+          personalized song recommendations with real previews — powered by
+          live music data.
         </p>
 
         <button
           onClick={onStart}
           className="group relative px-10 py-4 rounded-full text-lg font-semibold text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
-          style={{ background: "linear-gradient(135deg, #ff2d78, #a855f7)" }}
+          style={{
+            background: "linear-gradient(135deg, #ff2d78, #a855f7)",
+          }}
         >
           Start the Quiz
           <div
@@ -613,7 +535,9 @@ function LandingScreen({ onStart }) {
           />
         </button>
 
-        <p className="text-xs text-gray-600 mt-6">Takes about 2 minutes · No sign-up needed</p>
+        <p className="text-xs text-gray-600 mt-6">
+          Takes about 1 minute · No sign-up needed
+        </p>
       </div>
 
       <style>{`
@@ -661,12 +585,18 @@ function QuizScreen({ questions, answers, onAnswer, onFinish }) {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 relative overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full blur-[150px] pointer-events-none" style={{ background: "rgba(168,85,247,0.04)" }} />
+      <div
+        className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full blur-[150px] pointer-events-none"
+        style={{ background: "rgba(168,85,247,0.04)" }}
+      />
 
       <div className="w-full max-w-lg relative z-10">
         <ProgressBar current={currentIndex} total={questions.length} />
 
-        <div key={animKey} style={{ animation: `${animClass} 0.35s ease-out` }}>
+        <div
+          key={animKey}
+          style={{ animation: `${animClass} 0.35s ease-out` }}
+        >
           <div className="flex justify-center mb-4">
             <span className="text-xs uppercase tracking-widest text-gray-500 bg-[#1a1a24] px-3 py-1 rounded-full">
               {question.category}
@@ -689,8 +619,12 @@ function QuizScreen({ questions, answers, onAnswer, onFinish }) {
                   onClick={() => handleSelect(option)}
                   className="w-full text-left px-5 py-4 rounded-2xl border transition-all duration-200 text-sm sm:text-base cursor-pointer"
                   style={{
-                    borderColor: isSelected ? "rgba(255,45,120,0.5)" : "#252532",
-                    background: isSelected ? "rgba(255,45,120,0.08)" : "rgba(26,26,36,0.6)",
+                    borderColor: isSelected
+                      ? "rgba(255,45,120,0.5)"
+                      : "#252532",
+                    background: isSelected
+                      ? "rgba(255,45,120,0.08)"
+                      : "rgba(26,26,36,0.6)",
                     color: isSelected ? "#fff" : "#cbd5e1",
                   }}
                 >
@@ -722,7 +656,7 @@ function QuizScreen({ questions, answers, onAnswer, onFinish }) {
               cursor: canGoBack ? "pointer" : "not-allowed",
             }}
           >
-            ← Back
+            &larr; Back
           </button>
 
           <button
@@ -736,9 +670,11 @@ function QuizScreen({ questions, answers, onAnswer, onFinish }) {
             <button
               onClick={onFinish}
               className="px-6 py-2 rounded-full text-sm font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
-              style={{ background: "linear-gradient(135deg, #ff2d78, #a855f7)" }}
+              style={{
+                background: "linear-gradient(135deg, #ff2d78, #a855f7)",
+              }}
             >
-              Get Results →
+              Get Results &rarr;
             </button>
           ) : (
             <button
@@ -750,7 +686,7 @@ function QuizScreen({ questions, answers, onAnswer, onFinish }) {
                 cursor: !isLast ? "pointer" : "not-allowed",
               }}
             >
-              Next →
+              Next &rarr;
             </button>
           )}
         </div>
@@ -792,7 +728,9 @@ function LoadingScreen() {
       >
         {LOADING_MESSAGES[msgIndex]}
       </p>
-      <p className="mt-3 text-sm text-gray-600">This usually takes a few seconds</p>
+      <p className="mt-3 text-sm text-gray-600">
+        Searching live music databases...
+      </p>
       <style>{`
         @keyframes fadeInUp {
           from { opacity: 0; transform: translateY(12px); }
@@ -808,20 +746,83 @@ function LoadingScreen() {
 }
 
 // ─── Results Screen ─────────────────────────────────────────────────────────────
-function ResultsScreen({ results, onRetake }) {
+function ResultsScreen({ tracks, profile, allTracks, onRetake }) {
+  const [displayedTracks, setDisplayedTracks] = useState(tracks);
+  const [replacingId, setReplacingId] = useState(null);
+  const { blacklistedIds, addToBlacklist } = useBlacklist();
+  const allTracksRef = useRef(allTracks);
+  const dismissCountRef = useRef(0);
+
+  const handleKnowIt = useCallback(
+    async (track) => {
+      setReplacingId(track.id);
+      addToBlacklist(track);
+
+      const currentIds = new Set(displayedTracks.map((t) => t.id));
+      const updatedBlacklist = new Set([...blacklistedIds, track.id]);
+
+      // First try to find a replacement from the pre-fetched pool
+      const poolCandidate = allTracksRef.current.find(
+        (t) =>
+          !currentIds.has(t.id) &&
+          !updatedBlacklist.has(t.id) &&
+          t.artist.toLowerCase() !== track.artist.toLowerCase()
+      );
+
+      let replacement = poolCandidate;
+
+      // If pool is exhausted, fetch from API
+      if (!replacement) {
+        replacement = await fetchReplacement(
+          track,
+          updatedBlacklist,
+          currentIds
+        );
+      }
+
+      dismissCountRef.current += 1;
+
+      setDisplayedTracks((prev) =>
+        prev.map((t) => {
+          if (t.id === track.id) {
+            return replacement || { ...t, _dismissed: true };
+          }
+          return t;
+        })
+      );
+      setReplacingId(null);
+    },
+    [displayedTracks, blacklistedIds, addToBlacklist]
+  );
+
+  const dismissedCount = dismissCountRef.current;
+
   return (
     <div className="min-h-screen py-12 px-4 relative overflow-hidden">
-      <div className="absolute top-20 -left-40 w-96 h-96 rounded-full blur-[140px] pointer-events-none" style={{ background: "rgba(255,45,120,0.06)" }} />
-      <div className="absolute bottom-20 -right-40 w-96 h-96 rounded-full blur-[140px] pointer-events-none" style={{ background: "rgba(59,130,246,0.06)" }} />
+      <div
+        className="absolute top-20 -left-40 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
+        style={{ background: "rgba(255,45,120,0.06)" }}
+      />
+      <div
+        className="absolute bottom-20 -right-40 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
+        style={{ background: "rgba(59,130,246,0.06)" }}
+      />
 
       <div className="max-w-2xl mx-auto relative z-10">
         {/* Profile Header */}
-        <div className="text-center mb-10" style={{ animation: "fadeInUp 0.5s ease-out" }}>
+        <div
+          className="text-center mb-10"
+          style={{ animation: "fadeInUp 0.5s ease-out" }}
+        >
           <div
             className="inline-flex items-center gap-2 text-xs uppercase tracking-widest mb-4 px-4 py-1.5 rounded-full"
             style={{ color: "#ff2d78", background: "rgba(255,45,120,0.1)" }}
           >
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="w-3.5 h-3.5"
+            >
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
             </svg>
             Your Sonic Identity
@@ -830,122 +831,163 @@ function ResultsScreen({ results, onRetake }) {
             className="text-4xl sm:text-5xl font-black mb-3"
             style={{
               fontFamily: "'Outfit', sans-serif",
-              background: "linear-gradient(135deg, #ff2d78, #a855f7, #3b82f6)",
+              background:
+                "linear-gradient(135deg, #ff2d78, #a855f7, #3b82f6)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
             }}
           >
-            {results.profile_name}
+            {profile.profileName}
           </h1>
           <p className="text-gray-400 text-base sm:text-lg max-w-md mx-auto">
-            {results.profile_description}
+            {profile.profileDescription}
           </p>
         </div>
 
-        {/* Playlist Name */}
-        <div className="text-center mb-10" style={{ animation: "fadeInUp 0.5s ease-out 0.1s both" }}>
-          <div className="inline-block border rounded-2xl px-6 py-3" style={{ background: "#1a1a24", borderColor: "#252532" }}>
-            <span className="text-xs text-gray-500 uppercase tracking-wider block mb-1">Your Playlist</span>
-            <span className="text-lg font-semibold text-white" style={{ fontFamily: "'Outfit', sans-serif" }}>
-              {results.playlist_name}
+        {/* Dismissed counter */}
+        {dismissedCount > 0 && (
+          <div
+            className="text-center mb-6"
+            style={{ animation: "fadeInUp 0.3s ease-out" }}
+          >
+            <span className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-[#1a1a24] text-gray-400">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="w-3.5 h-3.5"
+              >
+                <path d="M9 12l2 2 4-4" />
+                <circle cx="12" cy="12" r="10" />
+              </svg>
+              {dismissedCount} track{dismissedCount !== 1 ? "s" : ""} you
+              already knew — replaced with deeper cuts
             </span>
           </div>
-        </div>
+        )}
 
-        {/* Top Songs */}
-        <section className="mb-10" style={{ animation: "fadeInUp 0.5s ease-out 0.2s both" }}>
-          <h2 className="text-sm uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: "#ff2d78" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-              <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+        {/* Recommendations */}
+        <section
+          className="mb-10"
+          style={{ animation: "fadeInUp 0.5s ease-out 0.2s both" }}
+        >
+          <h2
+            className="text-sm uppercase tracking-widest mb-5 flex items-center gap-2"
+            style={{ color: "#ff2d78" }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="w-4 h-4"
+            >
+              <path d="M9 18V5l12-2v13" />
+              <circle cx="6" cy="18" r="3" />
+              <circle cx="18" cy="16" r="3" />
             </svg>
-            Top Song Picks
+            Your Personalized Picks
           </h2>
-          <div className="space-y-3">
-            {results.top_songs?.map((song, i) => (
-              <div
-                key={i}
-                className="border rounded-2xl p-4 transition-colors hover:border-[rgba(255,45,120,0.3)]"
-                style={{ background: "rgba(26,26,36,0.8)", borderColor: "#252532" }}
-              >
-                <div className="flex items-start gap-4">
-                  <span
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white shrink-0"
-                    style={{ background: "linear-gradient(135deg, #ff2d78, #a855f7)" }}
-                  >
-                    {i + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-white">{song.title}</p>
-                    <p className="text-sm text-gray-400">{song.artist}</p>
-                    <p className="text-xs text-gray-500 mt-1">{song.why}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+
+          <div className="space-y-4">
+            {displayedTracks
+              .filter((t) => !t._dismissed)
+              .map((track, i) => (
+                <RecommendationCard
+                  key={track.id}
+                  track={track}
+                  index={i}
+                  onKnowIt={handleKnowIt}
+                  isReplacing={replacingId === track.id}
+                />
+              ))}
           </div>
+
+          {displayedTracks.every((t) => t._dismissed) && (
+            <div className="text-center py-12">
+              <p className="text-gray-400 text-lg mb-2">
+                Wow, you really know your music!
+              </p>
+              <p className="text-gray-500 text-sm">
+                We've run out of fresh recommendations for this session.
+              </p>
+            </div>
+          )}
         </section>
 
-        {/* Artists to Explore */}
-        <section className="mb-10" style={{ animation: "fadeInUp 0.5s ease-out 0.3s both" }}>
-          <h2 className="text-sm uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: "#a855f7" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-              <path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        {/* Taste Tags */}
+        <section
+          className="mb-10"
+          style={{ animation: "fadeInUp 0.5s ease-out 0.3s both" }}
+        >
+          <h2
+            className="text-sm uppercase tracking-widest mb-4 flex items-center gap-2"
+            style={{ color: "#a855f7" }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="w-4 h-4"
+            >
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+              <line x1="7" y1="7" x2="7.01" y2="7" />
             </svg>
-            Artists to Explore
+            Your Taste DNA
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {results.top_artists?.map((artist, i) => (
-              <div
-                key={i}
-                className="border rounded-2xl p-4 transition-colors hover:border-[rgba(168,85,247,0.3)]"
-                style={{ background: "rgba(26,26,36,0.8)", borderColor: "#252532" }}
+          <div className="flex flex-wrap gap-2">
+            {profile.tags.map((tag) => (
+              <span
+                key={tag}
+                className="px-3 py-1.5 rounded-full text-sm"
+                style={{
+                  background: "rgba(168,85,247,0.1)",
+                  color: "#a855f7",
+                  border: "1px solid rgba(168,85,247,0.2)",
+                }}
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-semibold text-white">{artist.name}</span>
-                  <span
-                    className="text-xs px-2 py-0.5 rounded-full"
-                    style={{ background: "rgba(168,85,247,0.15)", color: "#a855f7" }}
-                  >
-                    {artist.genre}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500">{artist.why}</p>
-              </div>
+                {tag}
+              </span>
             ))}
-          </div>
-        </section>
-
-        {/* Deep Cuts */}
-        <section className="mb-12" style={{ animation: "fadeInUp 0.5s ease-out 0.4s both" }}>
-          <h2 className="text-sm uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: "#06b6d4" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            Deep Cuts — Hidden Gems
-          </h2>
-          <div className="space-y-3">
-            {results.deep_cuts?.map((cut, i) => (
-              <div
-                key={i}
-                className="border rounded-2xl p-4 transition-colors hover:border-[rgba(6,182,212,0.3)]"
-                style={{ background: "rgba(26,26,36,0.8)", borderColor: "#252532" }}
+            {profile.moods.map((mood) => (
+              <span
+                key={mood}
+                className="px-3 py-1.5 rounded-full text-sm"
+                style={{
+                  background: "rgba(59,130,246,0.1)",
+                  color: "#3b82f6",
+                  border: "1px solid rgba(59,130,246,0.2)",
+                }}
               >
-                <p className="font-semibold text-white">
-                  {cut.title} <span className="text-gray-400 font-normal">— {cut.artist}</span>
-                </p>
-                <p className="text-xs text-gray-500 mt-1">{cut.why}</p>
-              </div>
+                {mood}
+              </span>
             ))}
+            <span
+              className="px-3 py-1.5 rounded-full text-sm"
+              style={{
+                background: "rgba(6,182,212,0.1)",
+                color: "#06b6d4",
+                border: "1px solid rgba(6,182,212,0.2)",
+              }}
+            >
+              {profile.era} era
+            </span>
           </div>
         </section>
 
         {/* Retake Button */}
-        <div className="text-center" style={{ animation: "fadeInUp 0.5s ease-out 0.5s both" }}>
+        <div
+          className="text-center"
+          style={{ animation: "fadeInUp 0.5s ease-out 0.4s both" }}
+        >
           <button
             onClick={onRetake}
             className="group relative px-8 py-3 rounded-full text-base font-semibold text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
-            style={{ background: "linear-gradient(135deg, #ff2d78, #a855f7)" }}
+            style={{
+              background: "linear-gradient(135deg, #ff2d78, #a855f7)",
+            }}
           >
             Retake Quiz
             <div
@@ -953,7 +995,9 @@ function ResultsScreen({ results, onRetake }) {
               style={{ background: "rgba(255,45,120,0.4)" }}
             />
           </button>
-          <p className="text-xs text-gray-600 mt-3">Questions are reshuffled every time</p>
+          <p className="text-xs text-gray-600 mt-3">
+            Questions are reshuffled every time
+          </p>
         </div>
       </div>
 
@@ -972,21 +1016,33 @@ function ErrorScreen({ message, onRetry }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4">
       <div className="text-center max-w-md">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#ff2d78" strokeWidth="1.5" className="w-16 h-16 mx-auto mb-4">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#ff2d78"
+          strokeWidth="1.5"
+          className="w-16 h-16 mx-auto mb-4"
+        >
           <circle cx="12" cy="12" r="10" />
           <line x1="15" y1="9" x2="9" y2="15" />
           <line x1="9" y1="9" x2="15" y2="15" />
         </svg>
-        <h2 className="text-2xl font-bold text-white mb-3" style={{ fontFamily: "'Outfit', sans-serif" }}>
+        <h2
+          className="text-2xl font-bold text-white mb-3"
+          style={{ fontFamily: "'Outfit', sans-serif" }}
+        >
           Something went wrong
         </h2>
         <p className="text-gray-400 mb-6">
-          {message || "We couldn't generate your recommendations. Please try again."}
+          {message ||
+            "We couldn't generate your recommendations. Please try again."}
         </p>
         <button
           onClick={onRetry}
           className="px-8 py-3 rounded-full text-base font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
-          style={{ background: "linear-gradient(135deg, #ff2d78, #a855f7)" }}
+          style={{
+            background: "linear-gradient(135deg, #ff2d78, #a855f7)",
+          }}
         >
           Try Again
         </button>
@@ -1016,7 +1072,7 @@ export default function App() {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }));
   }, []);
 
-  const fetchRecommendations = useCallback(async (qs, ans) => {
+  const fetchResults = useCallback(async (qs, ans) => {
     setScreen("loading");
 
     const userAnswers = qs.map((q) => ({
@@ -1026,9 +1082,8 @@ export default function App() {
     }));
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      const generated = generateRecommendations(userAnswers);
-      setResults(generated);
+      const data = await getRecommendations(userAnswers);
+      setResults(data);
       setScreen("results");
     } catch (err) {
       console.error("Recommendation error:", err);
@@ -1038,8 +1093,8 @@ export default function App() {
   }, []);
 
   const handleFinish = useCallback(() => {
-    fetchRecommendations(questions, answers);
-  }, [questions, answers, fetchRecommendations]);
+    fetchResults(questions, answers);
+  }, [questions, answers, fetchResults]);
 
   return (
     <>
@@ -1058,12 +1113,17 @@ export default function App() {
       )}
       {screen === "loading" && <LoadingScreen />}
       {screen === "results" && results && (
-        <ResultsScreen results={results} onRetake={initQuiz} />
+        <ResultsScreen
+          tracks={results.tracks}
+          profile={results.profile}
+          allTracks={results._allTracks}
+          onRetake={initQuiz}
+        />
       )}
       {screen === "error" && (
         <ErrorScreen
           message={errorMsg}
-          onRetry={() => fetchRecommendations(questions, answers)}
+          onRetry={() => fetchResults(questions, answers)}
         />
       )}
     </>
